@@ -1,5 +1,5 @@
 
-# AI-Enhanced Investment Framework (MVP)
+# AI-Enhanced Investment Framework
 
 Streamlit app that evaluates **financial feasibility** (NPV, IRR, payback, levelized cost) and **decarbonization impact** (tCO₂e avoided, carbon credit value) for **energy transition capital projects** in emerging markets. Includes a lightweight **RAG** over uploaded policy PDFs and a simple **optimization** to explore ROI vs decarbonization trade-offs.
 
