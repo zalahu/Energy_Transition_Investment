@@ -1,4 +1,3 @@
-
 import os
 import io
 import json
@@ -9,13 +8,23 @@ import plotly.express as px
 from core.utils import ScenarioInputs, ScenarioResults
 from core.finance import build_cash_flows, npv_irr_payback, lcox_like, monte_carlo, breakeven_price
 from core.carbon import annual_carbon, totals
-from core.policy import PolicyRAG
 from core.optimize import optimize_config
 
 st.set_page_config(page_title='AI-Enhanced Investment – Energy Transition', layout='wide')
 
-if 'policy_rag' not in st.session_state:
-    st.session_state.policy_rag = PolicyRAG()
+# lazy init helper
+def get_policy_rag():
+    if 'policy_rag' in st.session_state:
+        return st.session_state.policy_rag
+    try:
+        from core.policy import PolicyRAG
+        st.session_state.policy_rag = PolicyRAG()
+        return st.session_state.policy_rag
+    except Exception as e:
+        # store flag to avoid repeated failing imports
+        st.session_state.policy_rag = None
+        st.session_state.policy_rag_error = str(e)
+        return None
 
 st.sidebar.title('Navigation')
 page = st.sidebar.radio('Go to', ['Upload & Assumptions', 'Scenario Results', 'Sensitivity Dashboard', 'Policy Explorer', 'Cases Library'])
@@ -71,13 +80,18 @@ if page == 'Upload & Assumptions':
     st.subheader('Upload Policy/ITB/SoW PDFs (optional)')
     f = st.file_uploader('Upload PDF files', type=['pdf'], accept_multiple_files=True)
     if f:
-        for uploaded in f:
-            bytes_data = uploaded.read()
-            tmp_path = os.path.join('/tmp', uploaded.name)
-            with open(tmp_path, 'wb') as fh:
-                fh.write(bytes_data)
-            st.session_state.policy_rag.add_pdf(tmp_path, meta={'tag': 'uploaded'})
-        st.success(f'Indexed {len(f)} file(s) into the policy knowledge base.')
+        rag = get_policy_rag()
+        if rag is None:
+            st.error("Policy RAG is unavailable: " + st.session_state.get('policy_rag_error', 'unknown error') + 
+                     " — install DuckDB backend or update sqlite. See README.")
+        else:
+            for uploaded in f:
+                bytes_data = uploaded.read()
+                tmp_path = os.path.join('/tmp', uploaded.name)
+                with open(tmp_path, 'wb') as fh:
+                    fh.write(bytes_data)
+                rag.add_pdf(tmp_path, meta={'tag': 'uploaded'})
+            st.success(f'Indexed {len(f)} file(s) into the policy knowledge base.')
 
 # --- Page 2: Scenario Results ---
 elif page == 'Scenario Results':
@@ -152,16 +166,26 @@ elif page == 'Policy Explorer':
 
     q = st.text_input('Query')
     if st.button('Search') and q:
-        hits = st.session_state.policy_rag.query(q, k=5)
-        for h in hits:
-            with st.expander(f"{h['meta'].get('source')} – page {h['meta'].get('page')} (distance {h['distance']:.3f})"):
-                st.write(h['text'][:2000])
+        rag = get_policy_rag()
+        if rag is None:
+            st.error("Policy RAG is unavailable: " + st.session_state.get('policy_rag_error', 'unknown error') + 
+                     " — install DuckDB backend or update sqlite. See README.")
+        else:
+            hits = rag.query(q, k=5)
+            for h in hits:
+                with st.expander(f"{h['meta'].get('source')} – page {h['meta'].get('page')} (distance {h['distance']:.3f})"):
+                    st.write(h['text'][:2000])
 
     st.subheader('News / Headlines Sentiment (optional)')
     news = st.text_area('Paste recent headlines or policy notes')
     if st.button('Analyze Sentiment') and news:
-        s = st.session_state.policy_rag.sentiment(news)
-        st.json(s)
+        rag = get_policy_rag()
+        if rag is None:
+            st.error("Policy RAG is unavailable: " + st.session_state.get('policy_rag_error', 'unknown error') + 
+                     " — install DuckDB backend or update sqlite. See README.")
+        else:
+            s = rag.sentiment(news)
+            st.json(s)
 
 # --- Page 5: Cases Library ---
 else:
@@ -183,3 +207,26 @@ else:
         df = pd.DataFrame(combos)
         fig = px.scatter(df, x='co2', y='npv', color=df['wacc'].astype(str), symbol=df['scale'].astype(str), title='Trade-off: tCO₂e avoided vs NPV')
         st.plotly_chart(fig, use_container_width=True)
+
+import os
+from typing import List, Dict
+import fitz  # PyMuPDF
+import chromadb
+from chromadb.config import Settings
+from sentence_transformers import SentenceTransformer
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+
+class PolicyRAG:
+    def __init__(self, persist_dir: str = '.chromadb'):
+        # Use DuckDB+Parquet backend to avoid requiring a modern system sqlite3
+        self.client = chromadb.Client(Settings(
+            anonymized_telemetry=False,
+            persist_directory=persist_dir,
+            chroma_db_impl="duckdb+parquet"
+        ))
+        self.collection = self.client.get_or_create_collection(name='policies')
+        self.embedder = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+        self.sa = SentimentIntensityAnalyzer()
+
+    def add_pdf(self, filepath: str, meta: Dict = None):
+        # ... existing code ...
