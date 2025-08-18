@@ -1,4 +1,3 @@
-
 import os
 from typing import List, Dict
 import fitz  # PyMuPDF
@@ -9,7 +8,12 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 class PolicyRAG:
     def __init__(self, persist_dir: str = '.chromadb'):
-        self.client = chromadb.Client(Settings(anonymized_telemetry=False, persist_directory=persist_dir))
+        # Use DuckDB+Parquet backend to avoid requiring a modern system sqlite3
+        self.client = chromadb.Client(Settings(
+            anonymized_telemetry=False,
+            persist_directory=persist_dir,
+            chroma_db_impl="duckdb+parquet"
+        ))
         self.collection = self.client.get_or_create_collection(name='policies')
         self.embedder = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
         self.sa = SentimentIntensityAnalyzer()

@@ -208,25 +208,3 @@ else:
         fig = px.scatter(df, x='co2', y='npv', color=df['wacc'].astype(str), symbol=df['scale'].astype(str), title='Trade-off: tCO₂e avoided vs NPV')
         st.plotly_chart(fig, use_container_width=True)
 
-import os
-from typing import List, Dict
-import fitz  # PyMuPDF
-import chromadb
-from chromadb.config import Settings
-from sentence_transformers import SentenceTransformer
-from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
-
-class PolicyRAG:
-    def __init__(self, persist_dir: str = '.chromadb'):
-        # Use DuckDB+Parquet backend to avoid requiring a modern system sqlite3
-        self.client = chromadb.Client(Settings(
-            anonymized_telemetry=False,
-            persist_directory=persist_dir,
-            chroma_db_impl="duckdb+parquet"
-        ))
-        self.collection = self.client.get_or_create_collection(name='policies')
-        self.embedder = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
-        self.sa = SentimentIntensityAnalyzer()
-
-    def add_pdf(self, filepath: str, meta: Dict = None):
-        # ... existing code ...

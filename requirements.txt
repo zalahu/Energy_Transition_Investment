@@ -13,3 +13,5 @@ sentence-transformers==3.0.1
 vaderSentiment==3.3.2
 pulp==2.9.0
 python-dotenv==1.0.1
+duckdb
+pyarrow
